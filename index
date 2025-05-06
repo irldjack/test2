@@ -1,0 +1,168 @@
+from zipfile import ZipFile
+from pathlib import Path
+
+# Recriar diretório e conteúdo após reinício do estado
+project_dir = Path("/mnt/data/costello-window-viewer")
+project_dir.mkdir(parents=True, exist_ok=True)
+
+# Criar o conteúdo HTML novamente
+index_html_path = project_dir / "index.html"
+index_html_path.write_text("""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Costello Window Viewer</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f7f9fc; overflow: hidden; }
+    #ui {
+      position: absolute; top: 20px; left: 20px; z-index: 10;
+      background: white; padding: 1.5rem; border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15); width: 260px;
+    }
+    h2 { margin-top: 0; font-size: 20px; text-align: center; }
+    label, select, input, button {
+      width: 100%; margin-bottom: 12px; padding: 8px;
+      border: 1px solid #ccc; border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      background: #004080; color: white; border: none;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #0066cc;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h2>Window Designer</h2>
+    <label for="type">Window Type</label>
+    <select id="type">
+      <option value="casement">Casement</option>
+      <option value="sash">Sash</option>
+      <option value="tilt">Tilt & Turn</option>
+    </select>
+
+    <label for="width">Width (mm)</label>
+    <input type="number" id="width" value="1000" />
+
+    <label for="height">Height (mm)</label>
+    <input type="number" id="height" value="1200" />
+
+    <label for="color">Frame Color</label>
+    <input type="color" id="color" value="#8b8b8b" />
+
+    <button onclick="updateWindow()">Update Window</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    let scene, camera, renderer, controls, windowMesh;
+
+    function createGlass(w, h) {
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x87ceeb, opacity: 0.4, transparent: true });
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassMat);
+      glass.position.z = 41;
+      return glass;
+    }
+
+    function createFrame(w, h, depth = 80, color = 0x8b8b8b) {
+      return new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, depth),
+        new THREE.MeshStandardMaterial({ color: color })
+      );
+    }
+
+    function createWindow(type, w, h, frameColor) {
+      const g = new THREE.Group();
+      g.add(createFrame(w, h, 80, frameColor));
+
+      if (type === "casement") {
+        g.add(createGlass(w - 120, h - 120));
+      } else if (type === "sash") {
+        const sashH = (h - 120) / 2;
+        const sashW = w - 120;
+        const top = createGlass(sashW, sashH);
+        const bot = createGlass(sashW, sashH);
+        top.position.y = sashH / 2;
+        bot.position.y = -sashH / 2;
+        g.add(top); g.add(bot);
+      } else if (type === "tilt") {
+        g.add(createGlass(w - 120, h - 120));
+        const diag = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-w/4, h/4, 42),
+            new THREE.Vector3(w/4, -h/4, 42)
+          ]),
+          new THREE.LineBasicMaterial({ color: 0x000000 })
+        );
+        g.add(diag);
+      }
+      return g;
+    }
+
+    function updateWindow() {
+      if (windowMesh) scene.remove(windowMesh);
+
+      const w = parseFloat(document.getElementById("width").value) || 1000;
+      const h = parseFloat(document.getElementById("height").value) || 1200;
+      const type = document.getElementById("type").value;
+      const color = document.getElementById("color").value;
+      const frameColor = new THREE.Color(color);
+
+      windowMesh = createWindow(type, w, h, frameColor);
+      scene.add(windowMesh);
+    }
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color("#eef3f9");
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 5000);
+      camera.position.set(1500, 1000, 1500);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      scene.add(new THREE.AmbientLight(0xaaaaaa));
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(1, 1, 1);
+      scene.add(light);
+
+      updateWindow();
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    window.onload = init;
+  </script>
+</body>
+</html>
+""")
+
+# Compactar como ZIP
+zip_file = Path("/mnt/data/costello-window-viewer.zip")
+with ZipFile(zip_file, "w") as zipf:
+    zipf.write(index_html_path, arcname="index.html")
+
+zip_file.name
